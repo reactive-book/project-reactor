@@ -4,6 +4,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.ConnectableFlux;
 import reactor.core.publisher.Flux;
+import reactor.core.scheduler.Schedulers;
 
 import java.time.Duration;
 
@@ -37,9 +38,9 @@ public class ReactiveFlowApp {
                                final int maxStorageInPO) throws Exception {
 
     final ConnectableFlux<Integer> publisher = Flux.range(1, 20)
-//      .cache(maxStorageInPO, Duration.ofSeconds(MAX_SECONDS_TO_KEEP_IT_WHEN_NO_SPACE))
+      .delayElements(Duration.ofSeconds(1))
       .onBackpressureDrop(dropped -> log.error("Dropped! " + dropped))
-      .replay(maxStorageInPO, Duration.ofSeconds(MAX_SECONDS_TO_KEEP_IT_WHEN_NO_SPACE));
+      .replay(Duration.ofSeconds(4));
 
     final MagazineSubscriber jack = new MagazineSubscriber(
       sleepTimeJack,
@@ -54,8 +55,14 @@ public class ReactiveFlowApp {
       + maxStorageInPO + ". They have " + MAX_SECONDS_TO_KEEP_IT_WHEN_NO_SPACE +
       " seconds to consume each magazine.");
 
-    publisher.subscribe(jack);
-    publisher.subscribe(pete);
+    publisher
+      .publishOn(Schedulers.newSingle("jack"))
+      .cache(maxStorageInPO, Duration.ofSeconds(MAX_SECONDS_TO_KEEP_IT_WHEN_NO_SPACE))
+      .subscribe(jack);
+    publisher
+      .publishOn(Schedulers.newSingle("pete"))
+      .doOnError(t -> System.out.println("Error! " + t.toString()))
+      .subscribe(pete);
 
     publisher.connect();
 
